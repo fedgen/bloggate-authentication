@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service-mysql
+  labels:
+    app: auth-service-mysql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-service-mysql
+  template:
+    metadata:
+      labels:
+        app: auth-service-mysql
+    spec:
+      volumes:                   
+        - name: mysql-volume
+          hostPath:
+            path: /home/ubuntu/storage/mysql/authentication-db/
+            type: Directory
+      containers:
+      - name: web
+        image: fedgen/auth:prod
+        imagePullPolicy: Always
+        command: ['/bin/bash']           
+        args: ['-c','python manage.py migrate; gunicorn -w 4 admin.wsgi -b 0.0.0.0:80']
+        ports:
+        - containerPort: 80
+          protocol: TCP
+      - name: mysql                   
+        image: fedgen/auth-db:1.0.1
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+          - name: mysql-volume
+            mountPath: /var/lib/mysql/
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service-mysql
+spec:
+  selector:
+    app: auth-service-mysql
+  ports:
+    - protocol: TCP
+      port: 80
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: auth-service-ingress-secure
+spec:
+  entryPoints:
+    - websecure
+  routes:
+  - match: Host(`phis.fedgen.net`) && PathPrefix(`/auth`)
+    kind: Rule
+    services:
+    - name: auth-service-mysql
+      port: 80
+  tls:
+    secretName: fedgen-ml-tls
